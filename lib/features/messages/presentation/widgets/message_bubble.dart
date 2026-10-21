@@ -4,6 +4,7 @@ import 'package:flutter_blurhash/flutter_blurhash.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../domain/entities/message_entity.dart';
+import 'full_screen_image_viewer.dart';
 import 'voice_player_widget.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -181,19 +182,39 @@ class MessageBubble extends StatelessWidget {
                     if (message.type == 'image') ...[
                       if (message.mediaUrl != null &&
                           message.mediaUrl!.isNotEmpty)
-                        AspectRatio(
-                          aspectRatio: 4 / 3,
-                          child: CachedNetworkImage(
-                            imageUrl: message.mediaUrl!,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) =>
-                                message.blurhash != null
-                                ? BlurHash(hash: message.blurhash!)
-                                : Container(color: Colors.black26),
-                            errorWidget: (context, url, error) => const Center(
-                              child: Icon(
-                                Icons.broken_image,
-                                color: Colors.white54,
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => FullScreenImageViewer(
+                                  imageUrl: message.mediaUrl!,
+                                  heroTag: 'msg_img_${message.id}',
+                                  senderName:
+                                      message.senderName ??
+                                      (isMine ? 'Вы' : null),
+                                  createdAt: message.createdAt,
+                                ),
+                              ),
+                            );
+                          },
+                          child: AspectRatio(
+                            aspectRatio: 4 / 3,
+                            child: Hero(
+                              tag: 'msg_img_${message.id}',
+                              child: CachedNetworkImage(
+                                imageUrl: message.mediaUrl!,
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) =>
+                                    message.blurhash != null
+                                    ? BlurHash(hash: message.blurhash!)
+                                    : Container(color: Colors.black26),
+                                errorWidget: (context, url, error) =>
+                                    const Center(
+                                      child: Icon(
+                                        Icons.broken_image,
+                                        color: Colors.white54,
+                                      ),
+                                    ),
                               ),
                             ),
                           ),

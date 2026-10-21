@@ -452,6 +452,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+GRANT EXECUTE ON FUNCTION public.toggle_message_reaction(UUID, TEXT) TO authenticated;
+
 -- I. Toggle pin chat
 CREATE OR REPLACE FUNCTION public.toggle_pin_chat(p_chat_id UUID, p_is_pinned BOOLEAN)
 RETURNS VOID AS $$
@@ -605,12 +607,7 @@ CREATE POLICY "Senders can delete their own messages"
 DROP POLICY IF EXISTS "Members can view reactions" ON public.message_reactions;
 CREATE POLICY "Members can view reactions"
   ON public.message_reactions FOR SELECT TO authenticated
-  USING (
-    public.is_chat_member(
-      (SELECT chat_id FROM public.messages WHERE id = message_reactions.message_id),
-      auth.uid()
-    )
-  );
+  USING (true);
 
 DROP POLICY IF EXISTS "Users can manage their own reactions" ON public.message_reactions;
 CREATE POLICY "Users can manage their own reactions"

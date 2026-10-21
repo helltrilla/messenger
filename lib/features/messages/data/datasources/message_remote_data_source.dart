@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/supabase_constants.dart';
 import '../models/message_model.dart';
@@ -63,46 +63,72 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     final uid = currentUserId;
     if (uid == null) return [];
 
-    List<dynamic> response;
-    try {
-      var query = _client
-          .from('messages')
-          .select('''
-        *,
-        profile:profiles (
-          id,
-          username,
-          display_name,
-          avatar_url
-        ),
-        reactions:message_reactions (
-          emoji,
-          user_id
-        )
-      ''')
-          .eq('chat_id', chatId);
-
-      if (before != null) {
-        query = query.lt('created_at', before.toIso8601String());
-      }
-
-      response = await query.order('created_at', ascending: false).limit(limit);
-    } catch (_) {
-      var fallbackQuery = _client
-          .from('messages')
-          .select()
-          .eq('chat_id', chatId);
-      if (before != null) {
-        fallbackQuery = fallbackQuery.lt(
-          'created_at',
-          before.toIso8601String(),
-        );
-      }
-      response = await fallbackQuery
-          .order('created_at', ascending: false)
-          .limit(limit);
+    var query = _client.from('messages').select().eq('chat_id', chatId);
+    if (before != null) {
+      query = query.lt('created_at', before.toIso8601String());
     }
 
+    final response = await query
+        .order('created_at', ascending: false)
+        .limit(limit);
+    if (response.isEmpty) return [];
+
+    final messageIds = response.map((m) => m['id'] as String).toList();
+
+    // 1. Fetch reactions for these messages
+    final reactionsByMessageId = <String, List<Map<String, dynamic>>>{};
+    try {
+      final reactionsRes = await _client
+          .from('message_reactions')
+          .select('message_id, emoji, user_id')
+          .inFilter('message_id', messageIds);
+      for (final r in reactionsRes) {
+        final mid = r['message_id'] as String;
+        reactionsByMessageId.putIfAbsent(mid, () => []).add(r);
+      }
+    } catch (e) {
+      debugPrint('Error fetching reactions: $e');
+    }
+
+    // 2. Fetch sender names
+    final senderNamesByUserId = <String, String>{};
+    try {
+      final senderIds = response
+          .map((m) => m['sender_id'] as String)
+          .toSet()
+          .toList();
+      final profilesRes = await _client
+          .from('profiles')
+          .select('id, username, display_name')
+          .inFilter('id', senderIds);
+      for (final p in profilesRes) {
+        final pid = p['id'] as String;
+        final name =
+            (p['display_name'] as String?) ?? (p['username'] as String?);
+        if (name != null) senderNamesByUserId[pid] = name;
+      }
+    } catch (_) {}
+
+    // 3. Fetch reply preview info
+    final replyPreviews = <String, Map<String, dynamic>>{};
+    final replyIds = response
+        .map((m) => m['reply_to_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (replyIds.isNotEmpty) {
+      try {
+        final replyMsgs = await _client
+            .from('messages')
+            .select('id, content, sender_id')
+            .inFilter('id', replyIds);
+        for (final rm in replyMsgs) {
+          replyPreviews[rm['id'] as String] = rm;
+        }
+      } catch (_) {}
+    }
+
+    // 4. Calculate partner unread count
     int partnerUnreadCount = 0;
     try {
       final membersResponse = await _client
@@ -121,7 +147,7 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     final list = <MessageModel>[];
 
     for (final e in response) {
-      final map = e as Map<String, dynamic>;
+      final map = Map<String, dynamic>.from(e);
       final isMine = map['sender_id'] == uid;
       final isReadInDb = map['is_read'] == true;
 
@@ -135,6 +161,29 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
         } else {
           isRead = true;
         }
+      }
+
+      // Attach reactions
+      map['reactions'] = reactionsByMessageId[map['id']] ?? [];
+
+      // Attach sender profile
+      final senderId = map['sender_id'] as String?;
+      if (senderId != null && senderNamesByUserId.containsKey(senderId)) {
+        map['profile'] = {'display_name': senderNamesByUserId[senderId]};
+      }
+
+      // Attach reply preview
+      final replyToId = map['reply_to_id'] as String?;
+      if (replyToId != null && replyPreviews.containsKey(replyToId)) {
+        final rm = replyPreviews[replyToId]!;
+        final rSenderId = rm['sender_id'] as String?;
+        final rSenderName = rSenderId != null
+            ? senderNamesByUserId[rSenderId]
+            : null;
+        map['reply_to'] = {
+          'content': rm['content'],
+          'profile': {'display_name': rSenderName},
+        };
       }
 
       list.add(MessageModel.fromMap(map, uid, isReadExplicit: isRead));
@@ -333,15 +382,23 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     final uid = currentUserId;
     if (uid == null) throw Exception('Not authenticated');
 
+    bool rpcSuccess = false;
     try {
       await _client.rpc(
         'toggle_message_reaction',
         params: {'p_message_id': messageId, 'p_emoji': emoji},
       );
-    } catch (_) {
+      rpcSuccess = true;
+    } catch (e) {
+      debugPrint(
+        'toggle_message_reaction RPC error: $e, using direct table toggle',
+      );
+    }
+
+    if (!rpcSuccess) {
       final existing = await _client
           .from('message_reactions')
-          .select()
+          .select('id')
           .eq('message_id', messageId)
           .eq('user_id', uid)
           .eq('emoji', emoji)

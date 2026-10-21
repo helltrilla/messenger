@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -188,6 +188,75 @@ class ChatMessagesController extends AsyncNotifier<List<MessageEntity>> {
                 }
               }
             }
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'message_reactions',
+          callback: (payload) {
+            final isDelete = payload.eventType == PostgresChangeEvent.delete;
+            final record = isDelete ? payload.oldRecord : payload.newRecord;
+            final messageId = record['message_id'] as String?;
+            final emoji = record['emoji'] as String?;
+            final userId = record['user_id'] as String?;
+            if (messageId == null || emoji == null || userId == null) return;
+
+            final currentList = state.value ?? [];
+            final messageIndex = currentList.indexWhere(
+              (m) => m.id == messageId,
+            );
+            if (messageIndex == -1) return;
+
+            final targetMsg = currentList[messageIndex];
+            final reactions = List<ReactionEntity>.from(targetMsg.reactions);
+            final reactionIndex = reactions.indexWhere((r) => r.emoji == emoji);
+
+            if (isDelete) {
+              if (reactionIndex != -1) {
+                final current = reactions[reactionIndex];
+                final newUserIds = current.userIds
+                    .where((u) => u != userId)
+                    .toList();
+                if (newUserIds.isEmpty) {
+                  reactions.removeAt(reactionIndex);
+                } else {
+                  reactions[reactionIndex] = current.copyWith(
+                    count: newUserIds.length,
+                    hasReacted: newUserIds.contains(activeUid),
+                    userIds: newUserIds,
+                  );
+                }
+              }
+            } else {
+              // Insert
+              if (reactionIndex != -1) {
+                final current = reactions[reactionIndex];
+                if (!current.userIds.contains(userId)) {
+                  final newUserIds = [...current.userIds, userId];
+                  reactions[reactionIndex] = current.copyWith(
+                    count: newUserIds.length,
+                    hasReacted: newUserIds.contains(activeUid),
+                    userIds: newUserIds,
+                  );
+                }
+              } else {
+                reactions.add(
+                  ReactionEntity(
+                    emoji: emoji,
+                    count: 1,
+                    hasReacted: userId == activeUid,
+                    userIds: [userId],
+                  ),
+                );
+              }
+            }
+
+            final updatedMessages = List<MessageEntity>.from(currentList);
+            updatedMessages[messageIndex] = targetMsg.copyWith(
+              reactions: reactions,
+            );
+            state = AsyncValue.data(updatedMessages);
           },
         )
         .subscribe();
@@ -467,7 +536,14 @@ class ChatMessagesController extends AsyncNotifier<List<MessageEntity>> {
     state = AsyncValue.data(updatedList);
 
     final toggleUseCase = ref.read(toggleReactionUseCaseProvider);
-    await toggleUseCase(messageId: messageId, emoji: emoji);
+    final result = await toggleUseCase(messageId: messageId, emoji: emoji);
+    result.when(
+      success: (_) {},
+      error: (failure) {
+        debugPrint('Failed to persist reaction: ${failure.message}');
+        state = AsyncValue.data(currentMessages);
+      },
+    );
   }
 
   // --- SET TYPING ---
