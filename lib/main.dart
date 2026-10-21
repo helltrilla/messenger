@@ -75,6 +75,7 @@ class _TelegramMessengerAppState extends ConsumerState<TelegramMessengerApp> {
   }
 
   void _handleNotificationNavigation(String chatId) {
+    if (!mounted) return;
     final navContext = _navigatorKey.currentContext;
     if (navContext == null) return;
 

@@ -28,19 +28,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
   String? _highlightedMessageId;
+  late final ActiveChatIdNotifier _activeChatNotifier;
 
   @override
   void initState() {
     super.initState();
+    _activeChatNotifier = ref.read(activeChatIdProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(activeChatIdProvider.notifier).setActive(widget.chat.id);
+      _activeChatNotifier.setActive(widget.chat.id);
     });
+  }
+
+  @override
+  void didUpdateWidget(ChatScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chat.id != widget.chat.id) {
+      _activeChatNotifier.setActive(widget.chat.id);
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    ref.read(activeChatIdProvider.notifier).setActive(null);
+    _activeChatNotifier.setActive(null);
     super.dispose();
   }
 
