@@ -5,6 +5,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../domain/entities/message_entity.dart';
 import 'full_screen_image_viewer.dart';
+import 'video_circle_widget.dart';
 import 'voice_player_widget.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -53,6 +54,80 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMine = message.isMine;
+
+    // Telegram-style video note ("кружочек")
+    if (message.type == 'video') {
+      return Column(
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+            child: VideoCircleWidget(
+              message: message,
+              isMine: isMine,
+              onLongPress: onLongPress,
+              statusIndicator: _buildStatusIndicator(),
+            ),
+          ),
+          if (message.reactions.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.only(
+                left: isMine ? 48 : 10,
+                right: isMine ? 10 : 48,
+                top: 2,
+                bottom: 4,
+              ),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: message.reactions.map((r) {
+                  return GestureDetector(
+                    onTap: () => onToggleReaction?.call(r.emoji),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: r.hasReacted
+                            ? AppColors.primary.withValues(alpha: 0.25)
+                            : AppColors.darkSurface,
+                        border: Border.all(
+                          color: r.hasReacted
+                              ? AppColors.primary
+                              : Colors.white12,
+                          width: 1,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(r.emoji, style: const TextStyle(fontSize: 13)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${r.count}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: r.hasReacted
+                                  ? AppColors.primary
+                                  : Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ],
+      );
+    }
+
     final bubbleColor = isMine
         ? AppColors.darkOutgoingBubble
         : AppColors.darkIncomingBubble;

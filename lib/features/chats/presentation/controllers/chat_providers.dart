@@ -69,3 +69,14 @@ final saveToFavoritesUseCaseProvider = Provider<SaveToFavoritesUseCase>((ref) {
   final repo = ref.watch(chatRepositoryProvider);
   return SaveToFavoritesUseCase(repo);
 });
+
+class ActiveChatIdNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void setActive(String? chatId) => state = chatId;
+}
+
+final activeChatIdProvider = NotifierProvider<ActiveChatIdNotifier, String?>(
+  ActiveChatIdNotifier.new,
+);

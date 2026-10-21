@@ -82,5 +82,29 @@ void main() {
         expect(editedCopy.isEdited, isTrue);
       },
     );
+
+    test('Video note message entity supports type, mediaUrl and durationSec', () {
+      final now = DateTime.now();
+      final videoMsg = MessageEntity(
+        id: 'video-1',
+        chatId: 'chat-10',
+        senderId: 'user-1',
+        type: 'video',
+        mediaUrl:
+            'https://supabase.co/storage/v1/object/public/chat-media/circle.mp4',
+        durationSec: 18,
+        createdAt: now,
+        isMine: true,
+        status: MessageStatus.sent,
+      );
+
+      expect(videoMsg.type, 'video');
+      expect(videoMsg.durationSec, 18);
+      expect(videoMsg.mediaUrl, contains('circle.mp4'));
+
+      final updated = videoMsg.copyWith(status: MessageStatus.read);
+      expect(updated.status, MessageStatus.read);
+      expect(updated.type, 'video');
+    });
   });
 }

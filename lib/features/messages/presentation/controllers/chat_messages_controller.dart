@@ -485,6 +485,81 @@ class ChatMessagesController extends AsyncNotifier<List<MessageEntity>> {
     );
   }
 
+  // --- SEND VIDEO / VIDEO CIRCLE ---
+  Future<void> sendVideo({
+    required Uint8List bytes,
+    required String fileName,
+    int? durationSec,
+    String? replyToId,
+  }) async {
+    final tempId = _uuid.v4();
+    final client = ref.read(supabaseClientProvider);
+    final uid = client.auth.currentUser?.id ?? '';
+
+    final optimisticMessage = MessageEntity(
+      id: tempId,
+      chatId: chatId,
+      senderId: uid,
+      content: 'Видеосообщение',
+      type: 'video',
+      durationSec: durationSec,
+      replyToId: replyToId,
+      createdAt: DateTime.now(),
+      isMine: true,
+      status: MessageStatus.pending,
+    );
+
+    state = AsyncValue.data([optimisticMessage, ...(state.value ?? [])]);
+
+    final uploadUseCase = ref.read(uploadMediaUseCaseProvider);
+    final sendUseCase = ref.read(sendMessageUseCaseProvider);
+
+    final uploadResult = await uploadUseCase(bytes: bytes, fileName: fileName);
+
+    await uploadResult.when(
+      success: (publicUrl) async {
+        final sendResult = await sendUseCase(
+          chatId: chatId,
+          type: 'video',
+          mediaUrl: publicUrl,
+          content: 'Видеосообщение',
+          durationSec: durationSec,
+          replyToId: replyToId,
+        );
+
+        sendResult.when(
+          success: (serverMessage) {
+            final updatedList = (state.value ?? []).map((m) {
+              if (m.id == tempId) {
+                return serverMessage.copyWith(status: MessageStatus.sent);
+              }
+              return m;
+            }).toList();
+            state = AsyncValue.data(updatedList);
+          },
+          error: (failure) {
+            final failedList = (state.value ?? []).map((m) {
+              if (m.id == tempId) {
+                return m.copyWith(status: MessageStatus.failed);
+              }
+              return m;
+            }).toList();
+            state = AsyncValue.data(failedList);
+          },
+        );
+      },
+      error: (failure) async {
+        final failedList = (state.value ?? []).map((m) {
+          if (m.id == tempId) {
+            return m.copyWith(status: MessageStatus.failed);
+          }
+          return m;
+        }).toList();
+        state = AsyncValue.data(failedList);
+      },
+    );
+  }
+
   // --- TOGGLE REACTION ---
   Future<void> toggleReaction(String messageId, String emoji) async {
     final client = ref.read(supabaseClientProvider);

@@ -30,8 +30,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   String? _highlightedMessageId;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(activeChatIdProvider.notifier).setActive(widget.chat.id);
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
+    ref.read(activeChatIdProvider.notifier).setActive(null);
     super.dispose();
   }
 
@@ -671,6 +680,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   bytes: bytes,
                   fileName: fileName,
                   blurhash: demoBlurhash,
+                  replyToId: replyToId,
+                );
+                setState(() => _replyingMessage = null);
+              },
+              onSendVideo: (bytes, fileName, {durationSec, replyToId}) {
+                controller.sendVideo(
+                  bytes: bytes,
+                  fileName: fileName,
+                  durationSec: durationSec,
                   replyToId: replyToId,
                 );
                 setState(() => _replyingMessage = null);

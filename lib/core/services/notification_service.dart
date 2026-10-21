@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
@@ -9,6 +12,12 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
+
+  static final StreamController<String?> _tapController =
+      StreamController<String?>.broadcast();
+
+  /// Stream of chat IDs when user taps a notification
+  Stream<String?> get onNotificationTap => _tapController.stream;
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -32,7 +41,10 @@ class NotificationService {
       await _plugin.initialize(
         settings: initSettings,
         onDidReceiveNotificationResponse: (response) {
-          // Handle tap if needed
+          final payload = response.payload;
+          if (payload != null && payload.isNotEmpty) {
+            _tapController.add(payload);
+          }
         },
       );
       _isInitialized = true;
@@ -104,6 +116,57 @@ class NotificationService {
         notificationDetails: details,
         payload: chatId,
       );
+    } catch (_) {}
+  }
+
+  /// Registers user push token in Supabase user_push_tokens table
+  Future<void> registerDeviceToken({
+    required SupabaseClient client,
+    String? token,
+  }) async {
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    try {
+      final effectiveToken =
+          token ?? 'device_${uid.replaceAll('-', '').substring(0, 12)}';
+      String deviceType = 'other';
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        deviceType = 'android';
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        deviceType = 'ios';
+      } else if (defaultTargetPlatform == TargetPlatform.macOS) {
+        deviceType = 'macos';
+      } else if (defaultTargetPlatform == TargetPlatform.windows) {
+        deviceType = 'windows';
+      }
+
+      await client.from('user_push_tokens').upsert({
+        'user_id': uid,
+        'token': effectiveToken,
+        'device_type': deviceType,
+      });
+    } catch (_) {}
+  }
+
+  /// Unregisters device push token upon logout
+  Future<void> unregisterDeviceToken({
+    required SupabaseClient client,
+    String? token,
+  }) async {
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    try {
+      if (token != null) {
+        await client
+            .from('user_push_tokens')
+            .delete()
+            .eq('user_id', uid)
+            .eq('token', token);
+      } else {
+        await client.from('user_push_tokens').delete().eq('user_id', uid);
+      }
     } catch (_) {}
   }
 }

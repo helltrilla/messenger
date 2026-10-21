@@ -26,6 +26,7 @@ class ChatListScreen extends ConsumerStatefulWidget {
 
 class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   bool _isAccountsExpanded = false;
+  int _selectedFolderIndex = 0;
 
   void _openNewChat(BuildContext context) {
     showModalBottomSheet(
@@ -307,6 +308,10 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             onPressed: () => _openNewChat(context),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(44),
+          child: _buildFoldersBar(chatsList),
+        ),
       ),
       drawer: Drawer(
         backgroundColor: AppColors.darkSurface,
@@ -562,55 +567,26 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             ),
           ),
           data: (chats) {
-            if (chats.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: AppColors.darkSurface,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        size: 36,
-                        color: AppColors.textSecondaryDark,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Список чатов пуст',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Нажмите карандаш снизу, чтобы написать контактy',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondaryDark,
-                      ),
-                    ),
-                  ],
-                ),
-              );
+            final filteredChats = switch (_selectedFolderIndex) {
+              1 => chats.where((c) => c.type == 'direct').toList(),
+              2 => chats.where((c) => c.type == 'group').toList(),
+              3 => chats.where((c) => c.type == 'saved').toList(),
+              _ => chats,
+            };
+
+            if (filteredChats.isEmpty) {
+              return _buildEmptyFolderState(context, _selectedFolderIndex);
             }
 
             return ListView.separated(
-              itemCount: chats.length,
+              itemCount: filteredChats.length,
               separatorBuilder: (_, _) => const Divider(
                 color: AppColors.darkDivider,
                 indent: 78,
                 height: 1,
               ),
               itemBuilder: (context, index) {
-                final chat = chats[index];
+                final chat = filteredChats[index];
                 return ChatTile(
                   chat: chat,
                   onLongPress: () => _showChatTileOptions(context, chat),
@@ -679,6 +655,217 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildFoldersBar(List<ChatEntity> allChats) {
+    final unreadAll = allChats.fold<int>(0, (s, c) => s + c.unreadCount);
+    final unreadDirect = allChats
+        .where((c) => c.type == 'direct')
+        .fold<int>(0, (s, c) => s + c.unreadCount);
+    final unreadGroup = allChats
+        .where((c) => c.type == 'group')
+        .fold<int>(0, (s, c) => s + c.unreadCount);
+    final unreadSaved = allChats
+        .where((c) => c.type == 'saved')
+        .fold<int>(0, (s, c) => s + c.unreadCount);
+
+    final folders = [
+      (title: 'Все', unread: unreadAll),
+      (title: 'Личные', unread: unreadDirect),
+      (title: 'Группы', unread: unreadGroup),
+      (title: 'Избранное', unread: unreadSaved),
+    ];
+
+    return Container(
+      height: 44,
+      decoration: const BoxDecoration(
+        color: AppColors.darkSurface,
+        border: Border(
+          bottom: BorderSide(color: AppColors.darkDivider, width: 0.5),
+        ),
+      ),
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        scrollDirection: Axis.horizontal,
+        itemCount: folders.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (context, index) {
+          final item = folders[index];
+          final isSelected = _selectedFolderIndex == index;
+          return InkWell(
+            onTap: () {
+              setState(() {
+                _selectedFolderIndex = index;
+              });
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: isSelected ? AppColors.primary : Colors.transparent,
+                    width: 2.5,
+                  ),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    item.title,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white60,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                  if (item.unread > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.primary : Colors.white24,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        item.unread > 99 ? '99+' : '${item.unread}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyFolderState(BuildContext context, int folderIndex) {
+    IconData icon;
+    String title;
+    String subtitle;
+    Widget? actionButton;
+
+    switch (folderIndex) {
+      case 1:
+        icon = Icons.person_outline_rounded;
+        title = 'Нет личных чатов';
+        subtitle = 'Начните личный диалог с любым пользователем';
+        actionButton = ElevatedButton.icon(
+          onPressed: () => _openNewChat(context),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Написать сообщение'),
+        );
+        break;
+      case 2:
+        icon = Icons.group_outlined;
+        title = 'Нет групп';
+        subtitle = 'Создайте группу для общения с друзьями или коллегами';
+        actionButton = ElevatedButton.icon(
+          onPressed: () => _openNewGroup(context),
+          icon: const Icon(Icons.group_add_outlined),
+          label: const Text('Создать группу'),
+        );
+        break;
+      case 3:
+        icon = Icons.bookmark_border_rounded;
+        title = 'В Избранном пока пусто';
+        subtitle = 'Сохраняйте важные сообщения, заметки и файлы';
+        actionButton = ElevatedButton.icon(
+          onPressed: () async {
+            final result = await ref.read(getSavedChatUseCaseProvider)();
+            result.when(
+              success: (savedChat) {
+                if (context.mounted) {
+                  ref
+                      .read(chatListControllerProvider.notifier)
+                      .markChatLocallyRead(savedChat.id);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(chat: savedChat),
+                    ),
+                  ).then((_) {
+                    ref.read(chatListControllerProvider.notifier).loadChats();
+                  });
+                }
+              },
+              error: (f) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Ошибка: ${f.message}')),
+                  );
+                }
+              },
+            );
+          },
+          icon: const Icon(Icons.bookmark_rounded),
+          label: const Text('Открыть Избранное'),
+        );
+        break;
+      case 0:
+      default:
+        icon = Icons.chat_bubble_outline_rounded;
+        title = 'Список чатов пуст';
+        subtitle = 'Нажмите карандаш снизу, чтобы написать контактy';
+        actionButton = null;
+        break;
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: const BoxDecoration(
+                color: AppColors.darkSurface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 38, color: AppColors.textSecondaryDark),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondaryDark,
+              ),
+            ),
+            if (actionButton != null) ...[
+              const SizedBox(height: 20),
+              actionButton,
+            ],
+          ],
+        ),
       ),
     );
   }

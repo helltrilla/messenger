@@ -19,8 +19,13 @@ class ChatListController extends AsyncNotifier<List<ChatEntity>> {
     final client = ref.watch(supabaseClientProvider);
     final currentUid = client.auth.currentUser?.id;
 
-    // Initialize device notifications
-    unawaited(ref.read(notificationServiceProvider).initialize());
+    // Initialize device notifications & register device push token in Supabase
+    final notifService = ref.read(notificationServiceProvider);
+    unawaited(
+      notifService.initialize().then((_) {
+        return notifService.registerDeviceToken(client: client);
+      }),
+    );
 
     _subscription = client.channel('public:chats_and_messages_realtime');
 
@@ -62,24 +67,29 @@ class ChatListController extends AsyncNotifier<List<ChatEntity>> {
                   ? '📷 Фотография'
                   : type == 'voice'
                   ? '🎤 Голосовое сообщение'
+                  : type == 'video'
+                  ? '🎥 Видеосообщение'
                   : type == 'file'
                   ? '📎 Файл'
                   : content;
 
-              final existingList = state.value ?? [];
-              final matchChat = existingList
-                  .where((c) => c.id == chatId)
-                  .firstOrNull;
-              final senderTitle = matchChat?.title ?? 'Новое сообщение';
+              final activeChatId = ref.read(activeChatIdProvider);
+              if (activeChatId != chatId) {
+                final existingList = state.value ?? [];
+                final matchChat = existingList
+                    .where((c) => c.id == chatId)
+                    .firstOrNull;
+                final senderTitle = matchChat?.title ?? 'Новое сообщение';
 
-              ref
-                  .read(notificationServiceProvider)
-                  .showMessageNotification(
-                    id: chatId.hashCode,
-                    senderName: senderTitle,
-                    messageText: bodyText,
-                    chatId: chatId,
-                  );
+                ref
+                    .read(notificationServiceProvider)
+                    .showMessageNotification(
+                      id: chatId.hashCode,
+                      senderName: senderTitle,
+                      messageText: bodyText,
+                      chatId: chatId,
+                    );
+              }
             }
           },
         )

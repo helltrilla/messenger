@@ -10,6 +10,13 @@ class ChatInputBar extends StatefulWidget {
   final Function(int durationSec, {String? replyToId}) onSendVoice;
   final Function(Uint8List bytes, String fileName, {String? replyToId})
   onSendImage;
+  final Function(
+    Uint8List bytes,
+    String fileName, {
+    int? durationSec,
+    String? replyToId,
+  })?
+  onSendVideo;
   final MessageEntity? editingMessage;
   final VoidCallback? onCancelEdit;
   final Function(String newText)? onConfirmEdit;
@@ -22,6 +29,7 @@ class ChatInputBar extends StatefulWidget {
     required this.onSendText,
     required this.onSendVoice,
     required this.onSendImage,
+    this.onSendVideo,
     this.editingMessage,
     this.onCancelEdit,
     this.onConfirmEdit,
@@ -40,10 +48,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
   bool _hasText = false;
   Timer? _typingTimer;
 
-  // Voice recording state
+  // Voice and Video mode state
   bool _isRecordingVoice = false;
   int _recordingSeconds = 0;
   Timer? _voiceTimer;
+  bool _isVideoMode = false;
 
   @override
   void initState() {
@@ -150,6 +159,30 @@ class _ChatInputBarState extends State<ChatInputBar> {
         replyToId: widget.replyingMessage?.id,
       );
       widget.onCancelReply?.call();
+    }
+  }
+
+  Future<void> _pickVideo(ImageSource source) async {
+    try {
+      final picked = await _picker.pickVideo(
+        source: source,
+        maxDuration: const Duration(seconds: 60),
+      );
+      if (picked != null) {
+        final bytes = await picked.readAsBytes();
+        widget.onSendVideo?.call(
+          bytes,
+          picked.name,
+          replyToId: widget.replyingMessage?.id,
+        );
+        widget.onCancelReply?.call();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Ошибка записи видео: $e')));
+      }
     }
   }
 
@@ -423,23 +456,44 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     )
                   else
                     GestureDetector(
-                      onLongPress: _startVoiceRecording,
                       onTap: () {
+                        setState(() {
+                          _isVideoMode = !_isVideoMode;
+                        });
+                        ScaffoldMessenger.of(context).clearSnackBars();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
+                          SnackBar(
                             content: Text(
-                              'Удерживайте кнопку для записи голосового сообщения',
+                              _isVideoMode
+                                  ? 'Режим видеосообщения (кружочек). Удерживайте для съёмки.'
+                                  : 'Режим аудио. Удерживайте для записи голосового.',
                             ),
-                            duration: Duration(seconds: 1),
+                            duration: const Duration(seconds: 1),
+                            behavior: SnackBarBehavior.floating,
                           ),
                         );
                       },
+                      onLongPress: () {
+                        if (_isVideoMode) {
+                          _pickVideo(ImageSource.camera);
+                        } else {
+                          _startVoiceRecording();
+                        }
+                      },
                       child: Container(
                         padding: const EdgeInsets.all(10),
-                        child: const Icon(
-                          Icons.mic_rounded,
-                          color: AppColors.primary,
-                          size: 26,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          transitionBuilder: (child, animation) =>
+                              ScaleTransition(scale: animation, child: child),
+                          child: Icon(
+                            _isVideoMode
+                                ? Icons.videocam_rounded
+                                : Icons.mic_rounded,
+                            key: ValueKey<bool>(_isVideoMode),
+                            color: AppColors.primary,
+                            size: 26,
+                          ),
                         ),
                       ),
                     ),

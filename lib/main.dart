@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/constants/app_colors.dart';
 import 'core/constants/supabase_constants.dart';
@@ -7,8 +9,9 @@ import 'core/services/notification_service.dart';
 import 'core/services/supabase_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/login_screen.dart';
-import 'package:intl/date_symbol_data_local.dart';
 import 'features/chats/presentation/chat_list_screen.dart';
+import 'features/chats/presentation/controllers/chat_list_controller.dart';
+import 'features/messages/presentation/chat_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,12 +49,54 @@ void main() async {
   runApp(const ProviderScope(child: TelegramMessengerApp()));
 }
 
-class TelegramMessengerApp extends ConsumerWidget {
+class TelegramMessengerApp extends ConsumerStatefulWidget {
   const TelegramMessengerApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TelegramMessengerApp> createState() =>
+      _TelegramMessengerAppState();
+}
+
+class _TelegramMessengerAppState extends ConsumerState<TelegramMessengerApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<String?>? _notifSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _notifSubscription = ref
+        .read(notificationServiceProvider)
+        .onNotificationTap
+        .listen((chatId) {
+          if (chatId != null && chatId.isNotEmpty) {
+            _handleNotificationNavigation(chatId);
+          }
+        });
+  }
+
+  void _handleNotificationNavigation(String chatId) {
+    final navContext = _navigatorKey.currentContext;
+    if (navContext == null) return;
+
+    final chats = ref.read(chatListControllerProvider).value ?? [];
+    final match = chats.where((c) => c.id == chatId).firstOrNull;
+    if (match != null) {
+      Navigator.of(
+        navContext,
+      ).push(MaterialPageRoute(builder: (_) => ChatScreen(chat: match)));
+    }
+  }
+
+  @override
+  void dispose() {
+    _notifSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Telegram 2.0',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
