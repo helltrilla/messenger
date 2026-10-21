@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +18,33 @@ class FullScreenImageViewer extends StatefulWidget {
     this.createdAt,
   });
 
+  /// Static helper to open the viewer with semi-transparent Telegram-style route
+  static void open(
+    BuildContext context, {
+    required String imageUrl,
+    required String heroTag,
+    String? senderName,
+    DateTime? createdAt,
+  }) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.transparent,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FullScreenImageViewer(
+            imageUrl: imageUrl,
+            heroTag: heroTag,
+            senderName: senderName,
+            createdAt: createdAt,
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
+    );
+  }
+
   @override
   State<FullScreenImageViewer> createState() => _FullScreenImageViewerState();
 }
@@ -28,44 +56,38 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer>
   Animation<Matrix4>? _zoomAnimation;
 
   bool _showOverlays = true;
-  double _dragOffsetY = 0.0;
-  bool _isDragging = false;
+  double _currentScale = 1.0;
 
   @override
   void initState() {
     super.initState();
     _transformationController = TransformationController();
+    _transformationController.addListener(_onTransformationChanged);
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
   }
 
+  void _onTransformationChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    if ((scale - _currentScale).abs() > 0.05) {
+      setState(() {
+        _currentScale = scale;
+      });
+    }
+  }
+
   @override
   void dispose() {
+    _transformationController.removeListener(_onTransformationChanged);
     _transformationController.dispose();
     _animationController.dispose();
     super.dispose();
   }
 
-  void _handleDoubleTap(TapDownDetails details) {
+  void _animateToMatrix(Matrix4 targetMatrix) {
     if (_animationController.isAnimating) return;
-
-    final currentScale = _transformationController.value.getMaxScaleOnAxis();
-    final targetScale = currentScale > 1.2 ? 1.0 : 2.5;
-
-    final targetMatrix = Matrix4.identity();
-    if (targetScale > 1.0) {
-      final position = details.localPosition;
-      targetMatrix
-        ..translateByDouble(
-          -position.dx * (targetScale - 1),
-          -position.dy * (targetScale - 1),
-          0.0,
-          1.0,
-        )
-        ..scaleByDouble(targetScale, targetScale, 1.0, 1.0);
-    }
 
     _zoomAnimation =
         Matrix4Tween(
@@ -84,6 +106,57 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer>
     });
   }
 
+  void _animateToScale(double targetScale) {
+    final size = MediaQuery.of(context).size;
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    final targetMatrix = Matrix4.identity();
+    if (targetScale > 1.0) {
+      final dx = cx * (1 - targetScale);
+      final dy = cy * (1 - targetScale);
+      targetMatrix
+        ..translateByDouble(dx, dy, 0.0, 1.0)
+        ..scaleByDouble(targetScale, targetScale, 1.0, 1.0);
+    }
+
+    _animateToMatrix(targetMatrix);
+  }
+
+  void _handleDoubleTap(TapDownDetails details) {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    final targetScale = scale > 1.2 ? 1.0 : 2.5;
+
+    final targetMatrix = Matrix4.identity();
+    if (targetScale > 1.0) {
+      final position = details.localPosition;
+      targetMatrix
+        ..translateByDouble(
+          -position.dx * (targetScale - 1),
+          -position.dy * (targetScale - 1),
+          0.0,
+          1.0,
+        )
+        ..scaleByDouble(targetScale, targetScale, 1.0, 1.0);
+    }
+
+    _animateToMatrix(targetMatrix);
+  }
+
+  void _zoomIn() {
+    final nextScale = (_currentScale + 0.5).clamp(1.0, 5.0);
+    _animateToScale(nextScale);
+  }
+
+  void _zoomOut() {
+    final nextScale = (_currentScale - 0.5).clamp(1.0, 5.0);
+    _animateToScale(nextScale);
+  }
+
+  void _resetZoom() {
+    _animateToScale(1.0);
+  }
+
   void _toggleOverlays() {
     setState(() {
       _showOverlays = !_showOverlays;
@@ -99,80 +172,79 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer>
           ).format(widget.createdAt!.toLocal())
         : null;
 
-    final dragProgress = (_dragOffsetY.abs() / 250).clamp(0.0, 1.0);
-    final backgroundOpacity = (1.0 - dragProgress).clamp(0.2, 1.0);
+    final scalePercent = (_currentScale * 100).round();
 
     return Scaffold(
-      backgroundColor: Colors.black.withValues(alpha: backgroundOpacity),
+      backgroundColor: Colors.transparent,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Zoomable & draggable image area
+          // 1. Semi-transparent frosted glass backdrop (like in Telegram)
+          GestureDetector(
+            onTap: _toggleOverlays,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(color: Colors.black.withValues(alpha: 0.78)),
+            ),
+          ),
+
+          // 2. Interactive Zoomable & Pannable Image
           GestureDetector(
             onTap: _toggleOverlays,
             onDoubleTapDown: _handleDoubleTap,
             onDoubleTap: () {},
-            onVerticalDragStart: (_) {
-              final scale = _transformationController.value.getMaxScaleOnAxis();
-              if (scale <= 1.05) {
-                _isDragging = true;
-              }
-            },
-            onVerticalDragUpdate: (details) {
-              if (_isDragging) {
-                setState(() {
-                  _dragOffsetY += details.delta.dy;
-                });
-              }
-            },
-            onVerticalDragEnd: (details) {
-              if (_isDragging) {
-                if (_dragOffsetY.abs() > 120 ||
-                    details.primaryVelocity!.abs() > 600) {
+            child: InteractiveViewer(
+              transformationController: _transformationController,
+              minScale: 1.0,
+              maxScale: 5.0,
+              panEnabled: true,
+              scaleEnabled: true,
+              // Generous boundary margin allows moving freely in all directions when zoomed in
+              boundaryMargin: const EdgeInsets.symmetric(
+                horizontal: 500,
+                vertical: 500,
+              ),
+              clipBehavior: Clip.none,
+              onInteractionEnd: (details) {
+                // If user dragged down at 1.0x scale, dismiss view smoothly like Telegram
+                final matrix = _transformationController.value;
+                final scale = matrix.getMaxScaleOnAxis();
+                final translationY = matrix.getTranslation().y;
+                if (scale <= 1.05 &&
+                    (translationY > 120 ||
+                        details.velocity.pixelsPerSecond.dy > 600)) {
                   Navigator.of(context).pop();
-                } else {
-                  setState(() {
-                    _dragOffsetY = 0.0;
-                    _isDragging = false;
-                  });
+                } else if (scale <= 1.05 && translationY.abs() > 30) {
+                  _resetZoom();
                 }
-              }
-            },
-            child: Transform.translate(
-              offset: Offset(0, _dragOffsetY),
+              },
               child: Center(
-                child: InteractiveViewer(
-                  transformationController: _transformationController,
-                  minScale: 1.0,
-                  maxScale: 4.5,
-                  clipBehavior: Clip.none,
-                  child: Hero(
-                    tag: widget.heroTag,
-                    child: CachedNetworkImage(
-                      imageUrl: widget.imageUrl,
-                      fit: BoxFit.contain,
-                      placeholder: (context, url) => const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.primary,
-                          strokeWidth: 2,
-                        ),
+                child: Hero(
+                  tag: widget.heroTag,
+                  child: CachedNetworkImage(
+                    imageUrl: widget.imageUrl,
+                    fit: BoxFit.contain,
+                    placeholder: (context, url) => const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                        strokeWidth: 2,
                       ),
-                      errorWidget: (context, url, error) => const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.broken_image,
-                              color: Colors.white54,
-                              size: 48,
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Не удалось загрузить фото',
-                              style: TextStyle(color: Colors.white70),
-                            ),
-                          ],
-                        ),
+                    ),
+                    errorWidget: (context, url, error) => const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.broken_image,
+                            color: Colors.white54,
+                            size: 48,
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Не удалось загрузить фото',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -181,7 +253,7 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer>
             ),
           ),
 
-          // Top Header Bar
+          // 3. Top Header Bar
           AnimatedPositioned(
             duration: const Duration(milliseconds: 200),
             top: _showOverlays ? 0 : -100,
@@ -237,8 +309,93 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer>
                           ],
                         ),
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: () => Navigator.of(context).pop(),
+                        tooltip: 'Закрыть',
+                      ),
                     ],
                   ),
+                ),
+              ),
+            ),
+          ),
+
+          // 4. Floating Zoom Controls at the bottom
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 200),
+            bottom: _showOverlays ? 32 : -100,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: Colors.white24, width: 0.8),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black45,
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Zoom Out Button
+                    IconButton(
+                      icon: const Icon(
+                        Icons.remove,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      onPressed: _currentScale > 1.05 ? _zoomOut : null,
+                      disabledColor: Colors.white24,
+                      tooltip: 'Уменьшить',
+                    ),
+
+                    // Scale Percentage & Reset Button
+                    GestureDetector(
+                      onTap: _resetZoom,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _currentScale > 1.05
+                              ? AppColors.primary.withValues(alpha: 0.25)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          '$scalePercent%',
+                          style: TextStyle(
+                            color: _currentScale > 1.05
+                                ? AppColors.primary
+                                : Colors.white70,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Zoom In Button
+                    IconButton(
+                      icon: const Icon(
+                        Icons.add,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      onPressed: _currentScale < 4.95 ? _zoomIn : null,
+                      disabledColor: Colors.white24,
+                      tooltip: 'Приблизить',
+                    ),
+                  ],
                 ),
               ),
             ),

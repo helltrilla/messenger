@@ -184,17 +184,13 @@ class MessageBubble extends StatelessWidget {
                           message.mediaUrl!.isNotEmpty)
                         GestureDetector(
                           onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => FullScreenImageViewer(
-                                  imageUrl: message.mediaUrl!,
-                                  heroTag: 'msg_img_${message.id}',
-                                  senderName:
-                                      message.senderName ??
-                                      (isMine ? 'Вы' : null),
-                                  createdAt: message.createdAt,
-                                ),
-                              ),
+                            FullScreenImageViewer.open(
+                              context,
+                              imageUrl: message.mediaUrl!,
+                              heroTag: 'msg_img_${message.id}',
+                              senderName:
+                                  message.senderName ?? (isMine ? 'Вы' : null),
+                              createdAt: message.createdAt,
                             );
                           },
                           child: AspectRatio(
