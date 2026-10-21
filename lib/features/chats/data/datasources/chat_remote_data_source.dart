@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/chat_model.dart';
 import '../models/user_profile_model.dart';
 
@@ -230,7 +231,10 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     String? chatId;
 
     try {
-      chatId = await _client.rpc('get_or_create_saved_chat') as String?;
+      final res = await _client.rpc('get_or_create_saved_chat');
+      if (res != null) {
+        chatId = res.toString();
+      }
     } catch (_) {}
 
     if (chatId == null) {
@@ -243,17 +247,27 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       if (existing != null) {
         chatId = existing['id'] as String;
       } else {
-        final inserted = await _client
-            .from('chats')
-            .insert({
-              'type': 'saved',
-              'title': 'Избранное',
-              'direct_key': key,
-              'created_by': uid,
-            })
-            .select('id')
-            .single();
-        chatId = inserted['id'] as String;
+        final newChatId = const Uuid().v4();
+        try {
+          await _client.from('chats').insert({
+            'id': newChatId,
+            'type': 'saved',
+            'title': 'Избранное',
+            'direct_key': key,
+            'created_by': uid,
+          });
+          chatId = newChatId;
+        } catch (_) {
+          // Fallback if 'saved' type constraint check is not yet updated on database
+          await _client.from('chats').insert({
+            'id': newChatId,
+            'type': 'direct',
+            'title': 'Избранное',
+            'direct_key': key,
+            'created_by': uid,
+          });
+          chatId = newChatId;
+        }
       }
 
       await _client.from('chat_members').upsert({
