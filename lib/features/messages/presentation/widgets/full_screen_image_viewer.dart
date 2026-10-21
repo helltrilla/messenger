@@ -199,23 +199,29 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer>
               maxScale: 5.0,
               panEnabled: true,
               scaleEnabled: true,
-              // Generous boundary margin allows moving freely in all directions when zoomed in
-              boundaryMargin: const EdgeInsets.symmetric(
-                horizontal: 500,
-                vertical: 500,
-              ),
+              // Reasonable boundary margin: tight at 1.0x, comfortable when zoomed
+              boundaryMargin: _currentScale > 1.05
+                  ? const EdgeInsets.all(40)
+                  : const EdgeInsets.symmetric(horizontal: 0, vertical: 100),
               clipBehavior: Clip.none,
               onInteractionEnd: (details) {
-                // If user dragged down at 1.0x scale, dismiss view smoothly like Telegram
+                // If user dragged down or gave a quick flick at 1.0x scale, dismiss immediately
                 final matrix = _transformationController.value;
                 final scale = matrix.getMaxScaleOnAxis();
                 final translationY = matrix.getTranslation().y;
-                if (scale <= 1.05 &&
-                    (translationY > 120 ||
-                        details.velocity.pixelsPerSecond.dy > 600)) {
-                  Navigator.of(context).pop();
-                } else if (scale <= 1.05 && translationY.abs() > 30) {
-                  _resetZoom();
+                final velocityY = details.velocity.pixelsPerSecond.dy;
+
+                if (scale <= 1.08) {
+                  if (translationY > 45 ||
+                      velocityY > 220 ||
+                      translationY < -80 ||
+                      velocityY < -300) {
+                    Navigator.of(context).pop();
+                    return;
+                  }
+                  if (translationY.abs() > 10) {
+                    _resetZoom();
+                  }
                 }
               },
               child: Center(
