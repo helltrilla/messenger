@@ -34,8 +34,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     _activeChatNotifier = ref.read(activeChatIdProvider.notifier);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    Future(() {
       _activeChatNotifier.setActive(widget.chat.id);
+      ref
+          .read(chatListControllerProvider.notifier)
+          .markChatLocallyRead(widget.chat.id);
     });
   }
 
@@ -43,14 +46,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void didUpdateWidget(ChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
-      _activeChatNotifier.setActive(widget.chat.id);
+      Future(() {
+        _activeChatNotifier.setActive(widget.chat.id);
+      });
     }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _activeChatNotifier.setActive(null);
+    Future(() {
+      _activeChatNotifier.setActive(null);
+    });
     super.dispose();
   }
 
@@ -368,12 +375,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final chats = ref.watch(chatListControllerProvider).value;
     final activeChat =
         chats?.where((c) => c.id == widget.chat.id).firstOrNull ?? widget.chat;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(chatListControllerProvider.notifier)
-          .markChatLocallyRead(widget.chat.id);
-    });
 
     final messages = messagesState.value ?? [];
     final pinnedMsg = activeChat.pinnedMessageId != null
