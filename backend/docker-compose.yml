@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # 1. Standalone Messenger API Server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: messenger_api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/messenger
+      - JWT_SECRET=super-secret-messenger-jwt-key-2026
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - media_uploads:/app/uploads
+    depends_on:
+      - db
+      - redis
+
+  # 2. PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: messenger_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: messenger
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../supabase/schema.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  # 3. Redis for scalable Pub/Sub and WebSocket caching
+  redis:
+    image: redis:7-alpine
+    container_name: messenger_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  media_uploads:
