@@ -15,6 +15,7 @@ class SendMessageUseCase {
     String? mediaUrl,
     String? blurhash,
     int? durationSec,
+    String? replyToId,
   }) {
     return _repository.sendMessage(
       chatId: chatId,
@@ -23,6 +24,7 @@ class SendMessageUseCase {
       mediaUrl: mediaUrl,
       blurhash: blurhash,
       durationSec: durationSec,
+      replyToId: replyToId,
     );
   }
 }

@@ -35,6 +35,24 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<Result<Failure, String>> createGroupChat({
+    required String title,
+    required List<String> memberIds,
+  }) async {
+    try {
+      final chatId = await _dataSource.createGroupChat(
+        title: title,
+        memberIds: memberIds,
+      );
+      return Result.success(chatId);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(message: 'Не удалось создать группу: $e', cause: e),
+      );
+    }
+  }
+
+  @override
   Future<Result<Failure, List<UserProfileEntity>>> searchUsers(
     String query,
   ) async {
@@ -62,6 +80,39 @@ class ChatRepositoryImpl implements ChatRepository {
           message: 'Не удалось обновить статус прочтения: $e',
           cause: e,
         ),
+      );
+    }
+  }
+
+  @override
+  Future<Result<Failure, void>> togglePinChat({
+    required String chatId,
+    required bool isPinned,
+  }) async {
+    try {
+      await _dataSource.togglePinChat(chatId: chatId, isPinned: isPinned);
+      return Result.success(null);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(
+          message: 'Не удалось закрепить/открепить чат: $e',
+          cause: e,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<Result<Failure, void>> pinMessage({
+    required String chatId,
+    String? messageId,
+  }) async {
+    try {
+      await _dataSource.pinMessage(chatId: chatId, messageId: messageId);
+      return Result.success(null);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(message: 'Не удалось закрепить сообщение: $e', cause: e),
       );
     }
   }

@@ -6,7 +6,10 @@ import '../../domain/repositories/message_repository.dart';
 import '../../domain/usecases/delete_message_usecase.dart';
 import '../../domain/usecases/edit_message_usecase.dart';
 import '../../domain/usecases/get_messages_usecase.dart';
+import '../../domain/usecases/search_messages_usecase.dart';
 import '../../domain/usecases/send_message_usecase.dart';
+import '../../domain/usecases/set_typing_usecase.dart';
+import '../../domain/usecases/toggle_reaction_usecase.dart';
 import '../../domain/usecases/upload_media_usecase.dart';
 
 final messageRemoteDataSourceProvider = Provider<MessageRemoteDataSource>((
@@ -44,4 +47,19 @@ final deleteMessageUseCaseProvider = Provider<DeleteMessageUseCase>((ref) {
 final uploadMediaUseCaseProvider = Provider<UploadMediaUseCase>((ref) {
   final repo = ref.watch(messageRepositoryProvider);
   return UploadMediaUseCase(repo);
+});
+
+final toggleReactionUseCaseProvider = Provider<ToggleReactionUseCase>((ref) {
+  final repo = ref.watch(messageRepositoryProvider);
+  return ToggleReactionUseCase(repo);
+});
+
+final setTypingUseCaseProvider = Provider<SetTypingUseCase>((ref) {
+  final repo = ref.watch(messageRepositoryProvider);
+  return SetTypingUseCase(repo);
+});
+
+final searchMessagesUseCaseProvider = Provider<SearchMessagesUseCase>((ref) {
+  final repo = ref.watch(messageRepositoryProvider);
+  return SearchMessagesUseCase(repo);
 });

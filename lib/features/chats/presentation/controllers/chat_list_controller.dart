@@ -149,4 +149,46 @@ class ChatListController extends AsyncNotifier<List<ChatEntity>> {
       error: (failure) => throw failure,
     );
   }
+
+  Future<String> createGroupChat(String title, List<String> memberIds) async {
+    final createUseCase = ref.read(createGroupChatUseCaseProvider);
+    final result = await createUseCase(title: title, memberIds: memberIds);
+
+    return result.when(
+      success: (chatId) {
+        ref.invalidateSelf();
+        return chatId;
+      },
+      error: (failure) => throw failure,
+    );
+  }
+
+  Future<void> togglePinChat(String chatId) async {
+    final currentList = state.value ?? [];
+    final chat = currentList.where((c) => c.id == chatId).firstOrNull;
+    if (chat == null) return;
+
+    final newPinned = !chat.isPinned;
+    final updatedList = currentList.map((c) {
+      if (c.id == chatId) {
+        return c.copyWith(isPinned: newPinned);
+      }
+      return c;
+    }).toList();
+
+    updatedList.sort((a, b) {
+      if (a.isPinned != b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+      final aTime = a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
+
+    state = AsyncValue.data(updatedList);
+
+    final togglePinUseCase = ref.read(togglePinChatUseCaseProvider);
+    await togglePinUseCase(chatId: chatId, isPinned: newPinned);
+    ref.invalidateSelf();
+  }
 }

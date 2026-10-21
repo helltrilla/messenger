@@ -10,6 +10,8 @@ class ChatEntity {
   final String? partnerUsername;
   final String? lastMessageSenderId;
   final bool isLastMessageRead;
+  final bool isPinned;
+  final String? pinnedMessageId;
 
   const ChatEntity({
     required this.id,
@@ -23,6 +25,8 @@ class ChatEntity {
     this.partnerUsername,
     this.lastMessageSenderId,
     this.isLastMessageRead = false,
+    this.isPinned = false,
+    this.pinnedMessageId,
   });
 
   ChatEntity copyWith({
@@ -37,6 +41,8 @@ class ChatEntity {
     String? partnerUsername,
     String? lastMessageSenderId,
     bool? isLastMessageRead,
+    bool? isPinned,
+    String? pinnedMessageId,
   }) {
     return ChatEntity(
       id: id ?? this.id,
@@ -50,6 +56,8 @@ class ChatEntity {
       partnerUsername: partnerUsername ?? this.partnerUsername,
       lastMessageSenderId: lastMessageSenderId ?? this.lastMessageSenderId,
       isLastMessageRead: isLastMessageRead ?? this.isLastMessageRead,
+      isPinned: isPinned ?? this.isPinned,
+      pinnedMessageId: pinnedMessageId ?? this.pinnedMessageId,
     );
   }
 }

@@ -41,6 +41,7 @@ class MessageRepositoryImpl implements MessageRepository {
     String? mediaUrl,
     String? blurhash,
     int? durationSec,
+    String? replyToId,
   }) async {
     try {
       final message = await _dataSource.sendMessage(
@@ -50,6 +51,7 @@ class MessageRepositoryImpl implements MessageRepository {
         mediaUrl: mediaUrl,
         blurhash: blurhash,
         durationSec: durationSec,
+        replyToId: replyToId,
       );
       return Result.success(message);
     } catch (e) {
@@ -116,6 +118,74 @@ class MessageRepositoryImpl implements MessageRepository {
     } catch (e) {
       return Result.error(
         ServerFailure(message: 'Ошибка загрузки медиа: $e', cause: e),
+      );
+    }
+  }
+
+  @override
+  Future<Result<Failure, void>> toggleReaction({
+    required String messageId,
+    required String emoji,
+  }) async {
+    try {
+      await _dataSource.toggleReaction(messageId: messageId, emoji: emoji);
+      return Result.success(null);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(message: 'Ошибка при отправке реакции: $e', cause: e),
+      );
+    }
+  }
+
+  @override
+  Future<Result<Failure, void>> setTyping({
+    required String chatId,
+    required bool isTyping,
+  }) async {
+    try {
+      await _dataSource.setTyping(chatId: chatId, isTyping: isTyping);
+      return Result.success(null);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(
+          message: 'Ошибка обновления статуса набора: $e',
+          cause: e,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<Result<Failure, void>> setUserPresence({
+    required bool isOnline,
+  }) async {
+    try {
+      await _dataSource.setUserPresence(isOnline: isOnline);
+      return Result.success(null);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(
+          message: 'Ошибка обновления статуса присутствия: $e',
+          cause: e,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<Result<Failure, List<MessageEntity>>> searchMessages({
+    required String chatId,
+    required String query,
+  }) async {
+    try {
+      final results = await _dataSource.searchMessages(
+        chatId: chatId,
+        query: query,
+      );
+      return Result.success(results);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(message: 'Ошибка поиска сообщений: $e', cause: e),
       );
     }
   }

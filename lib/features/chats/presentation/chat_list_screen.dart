@@ -11,8 +11,10 @@ import '../../auth/presentation/widgets/account_switcher_sheet.dart';
 import '../../messages/presentation/chat_screen.dart';
 import 'controllers/chat_list_controller.dart';
 import 'new_chat_dialog.dart';
+import 'new_group_dialog.dart';
 import 'widgets/chat_tile.dart';
 import 'widgets/user_avatar.dart';
+import '../domain/entities/chat_entity.dart';
 
 class ChatListScreen extends ConsumerStatefulWidget {
   const ChatListScreen({super.key});
@@ -42,6 +44,91 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
           });
         },
       ),
+    );
+  }
+
+  void _openNewGroup(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NewGroupDialog(
+        onGroupCreated: (chat) {
+          ref
+              .read(chatListControllerProvider.notifier)
+              .markChatLocallyRead(chat.id);
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
+          ).then((_) {
+            ref.read(chatListControllerProvider.notifier).loadChats();
+          });
+        },
+      ),
+    );
+  }
+
+  void _showChatTileOptions(BuildContext context, ChatEntity chat) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.darkSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final isPinned = chat.isPinned;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(
+                    isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
+                    color: AppColors.primary,
+                  ),
+                  title: Text(
+                    isPinned ? 'Открепить чат' : 'Закрепить чат',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    ref
+                        .read(chatListControllerProvider.notifier)
+                        .togglePinChat(chat.id);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.mark_chat_read_outlined,
+                    color: Colors.white70,
+                  ),
+                  title: const Text(
+                    'Пометить как прочитанный',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    ref
+                        .read(chatListControllerProvider.notifier)
+                        .markChatLocallyRead(chat.id);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -369,13 +456,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
               ),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Создание групп будет в следующем обновлении',
-                    ),
-                  ),
-                );
+                _openNewGroup(context);
               },
             ),
             ListTile(
@@ -499,6 +580,7 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
                 final chat = chats[index];
                 return ChatTile(
                   chat: chat,
+                  onLongPress: () => _showChatTileOptions(context, chat),
                   onTap: () {
                     ref
                         .read(chatListControllerProvider.notifier)
@@ -520,7 +602,50 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         child: const Icon(Icons.edit),
-        onPressed: () => _openNewChat(context),
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: AppColors.darkSurface,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            builder: (ctx) => SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(
+                      Icons.person_add_rounded,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text(
+                      'Новый диалог',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openNewChat(context);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.group_add_rounded,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text(
+                      'Новая группа',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openNewGroup(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

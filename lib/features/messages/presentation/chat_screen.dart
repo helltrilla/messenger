@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,12 +22,26 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   MessageEntity? _editingMessage;
+  MessageEntity? _replyingMessage;
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+  String? _highlightedMessageId;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   void _showMessageOptions(
     BuildContext context,
     MessageEntity message,
     ChatMessagesController controller,
+    ChatEntity activeChat,
   ) {
+    final isPinnedMessage = activeChat.pinnedMessageId == message.id;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.darkSurface,
@@ -49,6 +64,87 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
+
+                // Quick emoji reaction bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: ['👍', '❤️', '🔥', '😂', '😮', '😢'].map((emoji) {
+                      final hasReacted = message.reactions.any(
+                        (r) => r.emoji == emoji && r.hasReacted,
+                      );
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          controller.toggleReaction(message.id, emoji);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: hasReacted
+                                ? AppColors.primary.withValues(alpha: 0.3)
+                                : AppColors.darkBackground,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: hasReacted
+                                  ? AppColors.primary
+                                  : Colors.transparent,
+                            ),
+                          ),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 22),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const Divider(color: AppColors.darkDivider, height: 16),
+
+                // Reply
+                ListTile(
+                  leading: const Icon(
+                    Icons.reply_rounded,
+                    color: AppColors.primary,
+                  ),
+                  title: const Text(
+                    'Ответить',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() {
+                      _replyingMessage = message;
+                    });
+                  },
+                ),
+
+                // Pin / Unpin message
+                ListTile(
+                  leading: Icon(
+                    isPinnedMessage
+                        ? Icons.push_pin_outlined
+                        : Icons.push_pin_rounded,
+                    color: AppColors.primary,
+                  ),
+                  title: Text(
+                    isPinnedMessage
+                        ? 'Открепить сообщение'
+                        : 'Закрепить сообщение',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    controller.pinMessage(isPinnedMessage ? null : message.id);
+                  },
+                ),
+
+                // Copy text
                 if (message.content != null && message.content!.isNotEmpty)
                   ListTile(
                     leading: const Icon(
@@ -70,6 +166,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       );
                     },
                   ),
+
+                // Edit
                 if (message.isMine && message.type == 'text')
                   ListTile(
                     leading: const Icon(
@@ -87,6 +185,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       });
                     },
                   ),
+
+                // Delete
                 if (message.isMine)
                   ListTile(
                     leading: const Icon(
@@ -161,6 +261,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final controller = ref.read(
       chatMessagesControllerProvider(widget.chat.id).notifier,
     );
+    final isPartnerTyping = ref.watch(partnerTypingProvider(widget.chat.id));
 
     final chats = ref.watch(chatListControllerProvider).value;
     final activeChat =
@@ -172,49 +273,179 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           .markChatLocallyRead(widget.chat.id);
     });
 
+    final messages = messagesState.value ?? [];
+    final pinnedMsg = activeChat.pinnedMessageId != null
+        ? messages.where((m) => m.id == activeChat.pinnedMessageId).firstOrNull
+        : null;
+
+    final displayMessages = _searchQuery.isEmpty
+        ? messages
+        : messages.where((m) {
+            final content = m.content?.toLowerCase() ?? '';
+            return content.contains(_searchQuery.toLowerCase());
+          }).toList();
+
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
-          children: [
-            UserAvatar(
-              name: activeChat.title,
-              imageUrl: activeChat.avatarUrl,
-              radius: 19,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                decoration: const InputDecoration(
+                  hintText: 'Поиск сообщений...',
+                  hintStyle: TextStyle(color: AppColors.textSecondaryDark),
+                  border: InputBorder.none,
+                ),
+                onChanged: (val) {
+                  setState(() => _searchQuery = val.trim());
+                },
+              )
+            : Row(
                 children: [
-                  Text(
-                    activeChat.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                  UserAvatar(
+                    name: activeChat.title,
+                    imageUrl: activeChat.avatarUrl,
+                    radius: 19,
                   ),
-                  const Text(
-                    'в сети',
-                    style: TextStyle(fontSize: 12, color: AppColors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          activeChat.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          isPartnerTyping
+                              ? 'печатает...'
+                              : (activeChat.type == 'group'
+                                    ? 'группа'
+                                    : 'в сети'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isPartnerTyping
+                                ? AppColors.primary
+                                : (activeChat.type == 'group'
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.primary),
+                            fontWeight: isPartnerTyping
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
         actions: [
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+          if (_isSearching)
+            IconButton(
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () {
+                setState(() {
+                  _isSearching = false;
+                  _searchQuery = '';
+                  _searchController.clear();
+                });
+              },
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.search_rounded),
+              onPressed: () => setState(() => _isSearching = true),
+            ),
+            IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+          ],
         ],
       ),
       body: Container(
-        // Subtle Telegram-style wallpaper background
         decoration: const BoxDecoration(color: Color(0xFF0F141C)),
         child: Column(
           children: [
+            // Pinned message banner
+            if (activeChat.pinnedMessageId != null)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                color: AppColors.darkSurface,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.push_pin_rounded,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          if (pinnedMsg != null) {
+                            setState(() {
+                              _highlightedMessageId = pinnedMsg.id;
+                            });
+                            Timer(const Duration(seconds: 2), () {
+                              if (mounted) {
+                                setState(() => _highlightedMessageId = null);
+                              }
+                            });
+                          }
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Закреплённое сообщение',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              pinnedMsg?.content ??
+                                  (pinnedMsg?.type == 'image'
+                                      ? '📷 Фотография'
+                                      : pinnedMsg?.type == 'voice'
+                                      ? '🎤 Голосовое сообщение'
+                                      : 'Сообщение'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: Colors.white60,
+                      ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => controller.pinMessage(null),
+                    ),
+                  ],
+                ),
+              ),
+
             // Messages List
             Expanded(
               child: messagesState.when(
@@ -249,8 +480,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     ),
                   ),
                 ),
-                data: (messages) {
-                  if (messages.isEmpty) {
+                data: (_) {
+                  if (displayMessages.isEmpty) {
                     return Center(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -261,24 +492,55 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           color: Colors.black26,
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Text(
-                          'Начните общение первым 👋',
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        child: Text(
+                          _searchQuery.isNotEmpty
+                              ? 'Сообщений не найдено'
+                              : 'Начните общение первым 👋',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     );
                   }
 
                   return ListView.builder(
-                    reverse: true, // Newest messages at the bottom
+                    reverse: true,
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    itemCount: messages.length,
+                    itemCount: displayMessages.length,
                     itemBuilder: (context, index) {
-                      final message = messages[index];
+                      final message = displayMessages[index];
                       return MessageBubble(
                         message: message,
-                        onLongPress: () =>
-                            _showMessageOptions(context, message, controller),
+                        showSenderName: activeChat.type == 'group',
+                        isHighlighted:
+                            _highlightedMessageId == message.id ||
+                            (_searchQuery.isNotEmpty &&
+                                (message.content?.toLowerCase().contains(
+                                      _searchQuery.toLowerCase(),
+                                    ) ??
+                                    false)),
+                        onToggleReaction: (emoji) =>
+                            controller.toggleReaction(message.id, emoji),
+                        onReplyTap: () {
+                          if (message.replyToId != null) {
+                            setState(() {
+                              _highlightedMessageId = message.replyToId;
+                            });
+                            Timer(const Duration(seconds: 2), () {
+                              if (mounted) {
+                                setState(() => _highlightedMessageId = null);
+                              }
+                            });
+                          }
+                        },
+                        onLongPress: () => _showMessageOptions(
+                          context,
+                          message,
+                          controller,
+                          activeChat,
+                        ),
                       );
                     },
                   );
@@ -289,21 +551,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             // Input Bar
             ChatInputBar(
               editingMessage: _editingMessage,
+              replyingMessage: _replyingMessage,
               onCancelEdit: () => setState(() => _editingMessage = null),
+              onCancelReply: () => setState(() => _replyingMessage = null),
+              onTypingChanged: (isTyping) => controller.setTyping(isTyping),
               onConfirmEdit: (newText) {
                 if (_editingMessage != null) {
                   controller.editMessage(_editingMessage!.id, newText);
                   setState(() => _editingMessage = null);
                 }
               },
-              onSendText: (text) => controller.sendTextMessage(text),
-              onSendImage: (bytes, fileName) {
+              onSendText: (text, {replyToId}) {
+                controller.sendTextMessage(
+                  text,
+                  replyToId: replyToId,
+                  replyToContent: _replyingMessage?.content,
+                  replyToSenderName: _replyingMessage?.senderName,
+                );
+                setState(() => _replyingMessage = null);
+              },
+              onSendVoice: (durationSec, {replyToId}) {
+                controller.sendVoiceMessage(
+                  durationSec,
+                  replyToId: replyToId,
+                  replyToContent: _replyingMessage?.content,
+                  replyToSenderName: _replyingMessage?.senderName,
+                );
+                setState(() => _replyingMessage = null);
+              },
+              onSendImage: (bytes, fileName, {replyToId}) {
                 const demoBlurhash = 'L6PZfSi_.AyE_3t7t7R**0o#DgR4';
                 controller.sendImage(
                   bytes: bytes,
                   fileName: fileName,
                   blurhash: demoBlurhash,
+                  replyToId: replyToId,
                 );
+                setState(() => _replyingMessage = null);
               },
             ),
           ],

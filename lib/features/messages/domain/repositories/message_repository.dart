@@ -17,6 +17,7 @@ abstract class MessageRepository {
     String? mediaUrl,
     String? blurhash,
     int? durationSec,
+    String? replyToId,
   });
   Future<Result<Failure, void>> editMessage({
     required String messageId,
@@ -31,5 +32,18 @@ abstract class MessageRepository {
   Future<Result<Failure, String>> uploadMedia({
     required Uint8List bytes,
     required String fileName,
+  });
+  Future<Result<Failure, void>> toggleReaction({
+    required String messageId,
+    required String emoji,
+  });
+  Future<Result<Failure, void>> setTyping({
+    required String chatId,
+    required bool isTyping,
+  });
+  Future<Result<Failure, void>> setUserPresence({required bool isOnline});
+  Future<Result<Failure, List<MessageEntity>>> searchMessages({
+    required String chatId,
+    required String query,
   });
 }

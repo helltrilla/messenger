@@ -13,6 +13,8 @@ class ChatModel extends ChatEntity {
     super.partnerUsername,
     super.lastMessageSenderId,
     super.isLastMessageRead,
+    super.isPinned,
+    super.pinnedMessageId,
   });
 
   factory ChatModel.fromMap(Map<String, dynamic> map, String currentUserId) {
@@ -38,11 +40,13 @@ class ChatModel extends ChatEntity {
 
     int unread = 0;
     bool isLastRead = false;
+    bool isPinned = false;
     if (map['members'] != null) {
       final members = map['members'] as List<dynamic>;
       for (final m in members) {
         if (m['user_id'] == currentUserId) {
           unread = m['unread_count'] ?? 0;
+          isPinned = m['is_pinned'] == true;
         } else {
           final partnerUnread = m['unread_count'] as int? ?? 0;
           if (partnerUnread == 0) {
@@ -66,6 +70,8 @@ class ChatModel extends ChatEntity {
       partnerUsername: partnerUsername,
       lastMessageSenderId: map['last_message_sender_id'],
       isLastMessageRead: isLastRead,
+      isPinned: isPinned,
+      pinnedMessageId: map['pinned_message_id'],
     );
   }
 }

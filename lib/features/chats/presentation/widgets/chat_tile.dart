@@ -8,8 +8,14 @@ import 'user_avatar.dart';
 class ChatTile extends StatelessWidget {
   final ChatEntity chat;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
-  const ChatTile({super.key, required this.chat, required this.onTap});
+  const ChatTile({
+    super.key,
+    required this.chat,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -21,11 +27,37 @@ class ChatTile extends StatelessWidget {
 
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
-            UserAvatar(name: chat.title, imageUrl: chat.avatarUrl, radius: 27),
+            Stack(
+              children: [
+                UserAvatar(
+                  name: chat.title,
+                  imageUrl: chat.avatarUrl,
+                  radius: 27,
+                ),
+                if (chat.type == 'group')
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.group_rounded,
+                        size: 11,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -35,15 +67,29 @@ class ChatTile extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Expanded(
-                        child: Text(
-                          chat.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimaryDark,
-                          ),
+                        child: Row(
+                          children: [
+                            if (chat.isPinned) ...[
+                              const Icon(
+                                Icons.push_pin_rounded,
+                                size: 14,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Expanded(
+                              child: Text(
+                                chat.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimaryDark,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -119,44 +165,56 @@ class ChatTile extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (hasUnread) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          constraints: const BoxConstraints(
-                            minWidth: 20,
-                            minHeight: 20,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.unreadBadge,
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.unreadBadge.withValues(
-                                  alpha: 0.35,
-                                ),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (chat.isPinned && !hasUnread) ...[
+                            const Icon(
+                              Icons.push_pin_rounded,
+                              size: 16,
+                              color: Colors.white38,
+                            ),
+                          ],
+                          if (hasUnread) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              constraints: const BoxConstraints(
+                                minWidth: 20,
+                                minHeight: 20,
                               ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              chat.unreadCount > 99
-                                  ? '99+'
-                                  : '${chat.unreadCount}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.unreadBadge,
+                                borderRadius: BorderRadius.circular(10),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.unreadBadge.withValues(
+                                      alpha: 0.35,
+                                    ),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  chat.unreadCount > 99
+                                      ? '99+'
+                                      : '${chat.unreadCount}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ],
+                          ],
+                        ],
+                      ),
                     ],
                   ),
                 ],

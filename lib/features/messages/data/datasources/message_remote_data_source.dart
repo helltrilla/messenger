@@ -18,6 +18,7 @@ abstract class MessageRemoteDataSource {
     String? mediaUrl,
     String? blurhash,
     int? durationSec,
+    String? replyToId,
   });
   Future<void> editMessage({
     required String messageId,
@@ -32,6 +33,16 @@ abstract class MessageRemoteDataSource {
   Future<String> uploadMedia({
     required Uint8List bytes,
     required String fileName,
+  });
+  Future<void> toggleReaction({
+    required String messageId,
+    required String emoji,
+  });
+  Future<void> setTyping({required String chatId, required bool isTyping});
+  Future<void> setUserPresence({required bool isOnline});
+  Future<List<MessageModel>> searchMessages({
+    required String chatId,
+    required String query,
   });
 }
 
@@ -52,15 +63,45 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     final uid = currentUserId;
     if (uid == null) return [];
 
-    var query = _client.from('messages').select().eq('chat_id', chatId);
+    List<dynamic> response;
+    try {
+      var query = _client
+          .from('messages')
+          .select('''
+        *,
+        profile:profiles (
+          id,
+          username,
+          display_name,
+          avatar_url
+        ),
+        reactions:message_reactions (
+          emoji,
+          user_id
+        )
+      ''')
+          .eq('chat_id', chatId);
 
-    if (before != null) {
-      query = query.lt('created_at', before.toIso8601String());
+      if (before != null) {
+        query = query.lt('created_at', before.toIso8601String());
+      }
+
+      response = await query.order('created_at', ascending: false).limit(limit);
+    } catch (_) {
+      var fallbackQuery = _client
+          .from('messages')
+          .select()
+          .eq('chat_id', chatId);
+      if (before != null) {
+        fallbackQuery = fallbackQuery.lt(
+          'created_at',
+          before.toIso8601String(),
+        );
+      }
+      response = await fallbackQuery
+          .order('created_at', ascending: false)
+          .limit(limit);
     }
-
-    final response = await query
-        .order('created_at', ascending: false)
-        .limit(limit);
 
     int partnerUnreadCount = 0;
     try {
@@ -79,7 +120,7 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     int unreadOutgoingEncountered = 0;
     final list = <MessageModel>[];
 
-    for (final e in (response as List<dynamic>)) {
+    for (final e in response) {
       final map = e as Map<String, dynamic>;
       final isMine = map['sender_id'] == uid;
       final isReadInDb = map['is_read'] == true;
@@ -110,21 +151,25 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     String? mediaUrl,
     String? blurhash,
     int? durationSec,
+    String? replyToId,
   }) async {
     final uid = currentUserId;
     if (uid == null) throw Exception('Not authenticated');
 
+    final insertData = <String, dynamic>{
+      'chat_id': chatId,
+      'sender_id': uid,
+      'content': content,
+      'type': type,
+      'media_url': mediaUrl,
+      'blurhash': blurhash,
+      'duration_sec': durationSec,
+      'reply_to_id': ?replyToId,
+    };
+
     final response = await _client
         .from('messages')
-        .insert({
-          'chat_id': chatId,
-          'sender_id': uid,
-          'content': content,
-          'type': type,
-          'media_url': mediaUrl,
-          'blurhash': blurhash,
-          'duration_sec': durationSec,
-        })
+        .insert(insertData)
         .select()
         .single();
 
@@ -190,7 +235,6 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     final uid = currentUserId;
     if (uid == null) throw Exception('Not authenticated');
 
-    // 1. Storage cleanup if mediaUrl is present
     if (mediaUrl != null && mediaUrl.isNotEmpty) {
       try {
         final uri = Uri.tryParse(mediaUrl);
@@ -207,14 +251,12 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
       } catch (_) {}
     }
 
-    // 2. Delete message from table
     await _client
         .from('messages')
         .delete()
         .eq('id', messageId)
         .eq('sender_id', uid);
 
-    // 3. Fallback sync for chats table last_message
     try {
       final prevMessages = await _client
           .from('messages')
@@ -281,5 +323,99 @@ class MessageRemoteDataSourceImpl implements MessageRemoteDataSource {
     return _client.storage
         .from(SupabaseConstants.mediaBucket)
         .getPublicUrl(path);
+  }
+
+  @override
+  Future<void> toggleReaction({
+    required String messageId,
+    required String emoji,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) throw Exception('Not authenticated');
+
+    try {
+      await _client.rpc(
+        'toggle_message_reaction',
+        params: {'p_message_id': messageId, 'p_emoji': emoji},
+      );
+    } catch (_) {
+      final existing = await _client
+          .from('message_reactions')
+          .select()
+          .eq('message_id', messageId)
+          .eq('user_id', uid)
+          .eq('emoji', emoji)
+          .maybeSingle();
+
+      if (existing != null) {
+        await _client
+            .from('message_reactions')
+            .delete()
+            .eq('message_id', messageId)
+            .eq('user_id', uid)
+            .eq('emoji', emoji);
+      } else {
+        await _client.from('message_reactions').insert({
+          'message_id': messageId,
+          'user_id': uid,
+          'emoji': emoji,
+        });
+      }
+    }
+  }
+
+  @override
+  Future<void> setTyping({
+    required String chatId,
+    required bool isTyping,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) return;
+    try {
+      await _client.rpc(
+        'set_typing',
+        params: {'p_chat_id': chatId, 'p_is_typing': isTyping},
+      );
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> setUserPresence({required bool isOnline}) async {
+    final uid = currentUserId;
+    if (uid == null) return;
+    try {
+      await _client.rpc('set_user_presence', params: {'p_is_online': isOnline});
+    } catch (_) {}
+  }
+
+  @override
+  Future<List<MessageModel>> searchMessages({
+    required String chatId,
+    required String query,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) return [];
+
+    try {
+      final response = await _client.rpc(
+        'search_messages',
+        params: {'p_chat_id': chatId, 'p_query': query},
+      );
+      return (response as List<dynamic>)
+          .map((m) => MessageModel.fromMap(m as Map<String, dynamic>, uid))
+          .toList();
+    } catch (_) {
+      final response = await _client
+          .from('messages')
+          .select()
+          .eq('chat_id', chatId)
+          .ilike('content', '%$query%')
+          .order('created_at', ascending: false)
+          .limit(50);
+
+      return (response as List<dynamic>)
+          .map((m) => MessageModel.fromMap(m as Map<String, dynamic>, uid))
+          .toList();
+    }
   }
 }

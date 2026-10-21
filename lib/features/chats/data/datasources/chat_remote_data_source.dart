@@ -5,8 +5,14 @@ import '../models/user_profile_model.dart';
 abstract class ChatRemoteDataSource {
   Future<List<ChatModel>> fetchChats();
   Future<String> createDirectChat(String targetUserId);
+  Future<String> createGroupChat({
+    required String title,
+    required List<String> memberIds,
+  });
   Future<List<UserProfileModel>> searchUsers(String query);
   Future<void> markChatAsRead(String chatId, String messageId);
+  Future<void> togglePinChat({required String chatId, required bool isPinned});
+  Future<void> pinMessage({required String chatId, String? messageId});
 }
 
 class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
@@ -29,12 +35,51 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
             type,
             title,
             avatar_url,
+            pinned_message_id,
             last_message_text,
             last_message_sender_id,
             last_message_at,
             members:chat_members (
               user_id,
+              is_pinned,
               unread_count,
+              profile:profiles (
+                id,
+                username,
+                display_name,
+                avatar_url
+              )
+            )
+          ''')
+          .order('last_message_at', ascending: false);
+
+      final chats = (response as List<dynamic>)
+          .map((map) => ChatModel.fromMap(map as Map<String, dynamic>, uid))
+          .toList();
+
+      chats.sort((a, b) {
+        if (a.isPinned != b.isPinned) {
+          return a.isPinned ? -1 : 1;
+        }
+        final aTime = a.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bTime = b.lastMessageAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bTime.compareTo(aTime);
+      });
+
+      return chats;
+    } on PostgrestException catch (_) {
+      final response = await _client
+          .from('chats')
+          .select('''
+            id,
+            type,
+            title,
+            avatar_url,
+            last_message_text,
+            last_message_sender_id,
+            last_message_at,
+            members:chat_members (
+              user_id,
               profile:profiles (
                 id,
                 username,
@@ -48,35 +93,6 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       return (response as List<dynamic>)
           .map((map) => ChatModel.fromMap(map as Map<String, dynamic>, uid))
           .toList();
-    } on PostgrestException catch (e) {
-      if (e.message.contains('unread_count')) {
-        final response = await _client
-            .from('chats')
-            .select('''
-              id,
-              type,
-              title,
-              avatar_url,
-              last_message_text,
-              last_message_sender_id,
-              last_message_at,
-              members:chat_members (
-                user_id,
-                profile:profiles (
-                  id,
-                  username,
-                  display_name,
-                  avatar_url
-                )
-              )
-            ''')
-            .order('last_message_at', ascending: false);
-
-        return (response as List<dynamic>)
-            .map((map) => ChatModel.fromMap(map as Map<String, dynamic>, uid))
-            .toList();
-      }
-      rethrow;
     }
   }
 
@@ -85,6 +101,18 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     final response = await _client.rpc(
       'get_or_create_direct_chat',
       params: {'target_user_id': targetUserId},
+    );
+    return response as String;
+  }
+
+  @override
+  Future<String> createGroupChat({
+    required String title,
+    required List<String> memberIds,
+  }) async {
+    final response = await _client.rpc(
+      'create_group_chat',
+      params: {'p_title': title, 'p_member_ids': memberIds},
     );
     return response as String;
   }
@@ -116,7 +144,6 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
     final uid = currentUserId;
     if (uid == null) return;
 
-    // 1. Try RPC function
     try {
       await _client.rpc(
         'mark_chat_as_read',
@@ -128,7 +155,6 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
       return;
     } catch (_) {}
 
-    // 2. Direct table update fallback
     try {
       final updateData = <String, dynamic>{
         'unread_count': 0,
@@ -139,20 +165,8 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           .update(updateData)
           .eq('chat_id', chatId)
           .eq('user_id', uid);
-    } catch (_) {
-      // 3. Fallback if unread_count column does not exist
-      if (messageId.isNotEmpty) {
-        try {
-          await _client
-              .from('chat_members')
-              .update({'last_read_message_id': messageId})
-              .eq('chat_id', chatId)
-              .eq('user_id', uid);
-        } catch (_) {}
-      }
-    }
+    } catch (_) {}
 
-    // 4. Update messages is_read
     try {
       await _client
           .from('messages')
@@ -161,5 +175,41 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           .neq('sender_id', uid)
           .eq('is_read', false);
     } catch (_) {}
+  }
+
+  @override
+  Future<void> togglePinChat({
+    required String chatId,
+    required bool isPinned,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) return;
+    try {
+      await _client.rpc(
+        'toggle_pin_chat',
+        params: {'p_chat_id': chatId, 'p_is_pinned': isPinned},
+      );
+    } catch (_) {
+      await _client
+          .from('chat_members')
+          .update({'is_pinned': isPinned})
+          .eq('chat_id', chatId)
+          .eq('user_id', uid);
+    }
+  }
+
+  @override
+  Future<void> pinMessage({required String chatId, String? messageId}) async {
+    try {
+      await _client.rpc(
+        'pin_message',
+        params: {'p_chat_id': chatId, 'p_message_id': messageId},
+      );
+    } catch (_) {
+      await _client
+          .from('chats')
+          .update({'pinned_message_id': messageId})
+          .eq('id', chatId);
+    }
   }
 }

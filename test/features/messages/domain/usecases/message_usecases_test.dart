@@ -64,6 +64,7 @@ class MockMessageRepository implements MessageRepository {
     String? mediaUrl,
     String? blurhash,
     int? durationSec,
+    String? replyToId,
   }) async => Result.success(
     MessageEntity(
       id: '1',
@@ -71,6 +72,7 @@ class MockMessageRepository implements MessageRepository {
       senderId: 'test-user-id',
       createdAt: DateTime.now(),
       isMine: true,
+      replyToId: replyToId,
     ),
   );
 
@@ -79,6 +81,29 @@ class MockMessageRepository implements MessageRepository {
     required Uint8List bytes,
     required String fileName,
   }) async => Result.success('https://example.com/media.jpg');
+
+  @override
+  Future<Result<Failure, void>> toggleReaction({
+    required String messageId,
+    required String emoji,
+  }) async => Result.success(null);
+
+  @override
+  Future<Result<Failure, void>> setTyping({
+    required String chatId,
+    required bool isTyping,
+  }) async => Result.success(null);
+
+  @override
+  Future<Result<Failure, void>> setUserPresence({
+    required bool isOnline,
+  }) async => Result.success(null);
+
+  @override
+  Future<Result<Failure, List<MessageEntity>>> searchMessages({
+    required String chatId,
+    required String query,
+  }) async => Result.success([]);
 }
 
 void main() {
