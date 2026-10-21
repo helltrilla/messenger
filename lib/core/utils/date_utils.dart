@@ -16,9 +16,17 @@ class ChatDateFormatter {
       return 'Вчера';
     } else if (differenceDays < 7) {
       // E.g. Пн, Вт, Ср
-      return DateFormat('E', 'ru').format(local);
+      try {
+        return DateFormat('E', 'ru').format(local);
+      } catch (_) {
+        return DateFormat('E').format(local);
+      }
     } else {
-      return DateFormat('d MMM', 'ru').format(local);
+      try {
+        return DateFormat('d MMM', 'ru').format(local);
+      } catch (_) {
+        return DateFormat('d MMM').format(local);
+      }
     }
   }
 

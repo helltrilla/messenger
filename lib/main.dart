@@ -7,10 +7,18 @@ import 'core/services/notification_service.dart';
 import 'core/services/supabase_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/login_screen.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'features/chats/presentation/chat_list_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Russian date formatting for intl
+  try {
+    await initializeDateFormatting('ru', null);
+  } catch (e) {
+    debugPrint('Date formatting initialization error: $e');
+  }
 
   // Initialize Supabase
   if (SupabaseConstants.isConfigured) {
