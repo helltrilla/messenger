@@ -41,7 +41,38 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final gradient = _getGradient(name);
+    final isSaved = name == 'Избранное';
+    final savedColors = [const Color(0xFF2AABEE), const Color(0xFF229ED9)];
+    final gradient = isSaved ? savedColors : _getGradient(name);
+
+    Widget placeholder() {
+      return Container(
+        width: radius * 2,
+        height: radius * 2,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradient,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: isSaved
+            ? Icon(
+                Icons.bookmark_rounded,
+                color: Colors.white,
+                size: radius * 1.15,
+              )
+            : Text(
+                _getInitials(name),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: radius * 0.75,
+                ),
+              ),
+      );
+    }
 
     return Stack(
       children: [
@@ -55,63 +86,10 @@ class UserAvatar extends StatelessWidget {
                     width: radius * 2,
                     height: radius * 2,
                     fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: gradient,
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        _getInitials(name),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: radius * 0.75,
-                        ),
-                      ),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: gradient,
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        _getInitials(name),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: radius * 0.75,
-                        ),
-                      ),
-                    ),
+                    placeholder: (context, url) => placeholder(),
+                    errorWidget: (context, url, error) => placeholder(),
                   )
-                : Container(
-                    width: radius * 2,
-                    height: radius * 2,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: gradient,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _getInitials(name),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: radius * 0.75,
-                      ),
-                    ),
-                  ),
+                : placeholder(),
           ),
         ),
         if (isOnline)

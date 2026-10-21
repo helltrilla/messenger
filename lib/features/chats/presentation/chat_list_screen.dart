@@ -10,6 +10,7 @@ import '../../auth/presentation/login_screen.dart';
 import '../../auth/presentation/widgets/account_switcher_sheet.dart';
 import '../../messages/presentation/chat_screen.dart';
 import 'controllers/chat_list_controller.dart';
+import 'controllers/chat_providers.dart';
 import 'new_chat_dialog.dart';
 import 'new_group_dialog.dart';
 import 'widgets/chat_tile.dart';
@@ -460,12 +461,44 @@ class _ChatListScreenState extends ConsumerState<ChatListScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.bookmark_border, color: Colors.white70),
+              leading: const Icon(
+                Icons.bookmark_rounded,
+                color: AppColors.primary,
+              ),
               title: const Text(
                 'Избранное',
                 style: TextStyle(color: Colors.white),
               ),
-              onTap: () => Navigator.pop(context),
+              onTap: () async {
+                Navigator.pop(context);
+                final result = await ref.read(getSavedChatUseCaseProvider)();
+                result.when(
+                  success: (savedChat) {
+                    if (context.mounted) {
+                      ref
+                          .read(chatListControllerProvider.notifier)
+                          .markChatLocallyRead(savedChat.id);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(chat: savedChat),
+                        ),
+                      ).then((_) {
+                        ref
+                            .read(chatListControllerProvider.notifier)
+                            .loadChats();
+                      });
+                    }
+                  },
+                  error: (f) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Ошибка: ${f.message}')),
+                      );
+                    }
+                  },
+                );
+              },
             ),
             ListTile(
               leading: const Icon(

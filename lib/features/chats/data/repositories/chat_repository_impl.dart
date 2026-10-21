@@ -116,4 +116,43 @@ class ChatRepositoryImpl implements ChatRepository {
       );
     }
   }
+
+  @override
+  Future<Result<Failure, ChatEntity>> getOrCreateSavedChat() async {
+    try {
+      final chat = await _dataSource.getOrCreateSavedChat();
+      return Result.success(chat);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(message: 'Не удалось открыть Избранное: $e', cause: e),
+      );
+    }
+  }
+
+  @override
+  Future<Result<Failure, void>> forwardToSavedMessages({
+    required String? content,
+    String type = 'text',
+    String? mediaUrl,
+    String? blurhash,
+    int? durationSec,
+  }) async {
+    try {
+      await _dataSource.forwardToSavedMessages(
+        content: content,
+        type: type,
+        mediaUrl: mediaUrl,
+        blurhash: blurhash,
+        durationSec: durationSec,
+      );
+      return Result.success(null);
+    } catch (e) {
+      return Result.error(
+        ServerFailure(
+          message: 'Не удалось сохранить в Избранное: $e',
+          cause: e,
+        ),
+      );
+    }
+  }
 }

@@ -30,7 +30,7 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFA
 -- 3. CHATS TABLE
 CREATE TABLE IF NOT EXISTS public.chats (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  type TEXT NOT NULL CHECK (type IN ('direct', 'group', 'channel')) DEFAULT 'direct',
+  type TEXT NOT NULL CHECK (type IN ('direct', 'group', 'channel', 'saved')) DEFAULT 'direct',
   title TEXT,
   avatar_url TEXT,
   created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS public.chats (
   last_message_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.chats DROP CONSTRAINT IF EXISTS chats_type_check;
+ALTER TABLE public.chats ADD CONSTRAINT chats_type_check CHECK (type IN ('direct', 'group', 'channel', 'saved'));
 
 ALTER TABLE public.chats ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'direct';
 ALTER TABLE public.chats ADD COLUMN IF NOT EXISTS title TEXT;
@@ -428,7 +431,45 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- H. Toggle message reaction
+-- H. Get or create saved messages chat ("Избранное")
+CREATE OR REPLACE FUNCTION public.get_or_create_saved_chat()
+RETURNS UUID AS $$
+DECLARE
+  v_chat_id UUID;
+  v_my_id UUID := auth.uid();
+  v_key TEXT;
+BEGIN
+  IF v_my_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
+  v_key := 'saved_' || v_my_id::TEXT;
+
+  SELECT id INTO v_chat_id FROM public.chats WHERE direct_key = v_key LIMIT 1;
+  
+  IF v_chat_id IS NOT NULL THEN
+    INSERT INTO public.chat_members (chat_id, user_id, role)
+    VALUES (v_chat_id, v_my_id, 'owner')
+    ON CONFLICT (chat_id, user_id) DO NOTHING;
+
+    RETURN v_chat_id;
+  END IF;
+
+  INSERT INTO public.chats (type, title, direct_key, created_by)
+  VALUES ('saved', 'Избранное', v_key, v_my_id)
+  RETURNING id INTO v_chat_id;
+
+  INSERT INTO public.chat_members (chat_id, user_id, role)
+  VALUES (v_chat_id, v_my_id, 'owner')
+  ON CONFLICT (chat_id, user_id) DO NOTHING;
+
+  RETURN v_chat_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.get_or_create_saved_chat() TO authenticated;
+
+-- I. Toggle message reaction
 CREATE OR REPLACE FUNCTION public.toggle_message_reaction(p_message_id UUID, p_emoji TEXT)
 RETURNS VOID AS $$
 DECLARE

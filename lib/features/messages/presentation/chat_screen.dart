@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../chats/domain/entities/chat_entity.dart';
 import '../../chats/presentation/controllers/chat_list_controller.dart';
+import '../../chats/presentation/controllers/chat_providers.dart';
 import '../../chats/presentation/widgets/user_avatar.dart';
 import '../domain/entities/message_entity.dart';
 import 'controllers/chat_messages_controller.dart';
@@ -123,6 +124,88 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     });
                   },
                 ),
+
+                // Save to Favorites ("В Избранное")
+                if (activeChat.type != 'saved')
+                  ListTile(
+                    leading: const Icon(
+                      Icons.bookmark_add_rounded,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text(
+                      'В Избранное',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      try {
+                        final saveUseCase = ref.read(
+                          saveToFavoritesUseCaseProvider,
+                        );
+                        final result = await saveUseCase(message);
+                        result.when(
+                          success: (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  backgroundColor: AppColors.darkSurface,
+                                  content: const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.bookmark_added_rounded,
+                                        color: AppColors.primary,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Сохранено в Избранное',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ],
+                                  ),
+                                  action: SnackBarAction(
+                                    label: 'Перейти',
+                                    textColor: AppColors.primary,
+                                    onPressed: () async {
+                                      final res = await ref.read(
+                                        getSavedChatUseCaseProvider,
+                                      )();
+                                      res.when(
+                                        success: (savedChat) {
+                                          if (context.mounted) {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    ChatScreen(chat: savedChat),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                        error: (_) {},
+                                      );
+                                    },
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                          error: (f) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Ошибка: ${f.message}')),
+                              );
+                            }
+                          },
+                        );
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+                        }
+                      }
+                    },
+                  ),
 
                 // Pin / Unpin message
                 ListTile(
@@ -327,14 +410,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         Text(
                           isPartnerTyping
                               ? 'печатает...'
-                              : (activeChat.type == 'group'
-                                    ? 'группа'
-                                    : 'в сети'),
+                              : (activeChat.type == 'saved'
+                                    ? 'сохраненные сообщения'
+                                    : (activeChat.type == 'group'
+                                          ? 'группа'
+                                          : 'в сети')),
                           style: TextStyle(
                             fontSize: 12,
                             color: isPartnerTyping
                                 ? AppColors.primary
-                                : (activeChat.type == 'group'
+                                : (activeChat.type == 'group' ||
+                                          activeChat.type == 'saved'
                                       ? AppColors.textSecondaryDark
                                       : AppColors.primary),
                             fontWeight: isPartnerTyping

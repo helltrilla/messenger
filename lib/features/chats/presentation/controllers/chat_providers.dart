@@ -6,8 +6,10 @@ import '../../domain/repositories/chat_repository.dart';
 import '../../domain/usecases/create_direct_chat_usecase.dart';
 import '../../domain/usecases/create_group_chat_usecase.dart';
 import '../../domain/usecases/get_chats_usecase.dart';
+import '../../domain/usecases/get_saved_chat_usecase.dart';
 import '../../domain/usecases/mark_chat_as_read_usecase.dart';
 import '../../domain/usecases/pin_message_usecase.dart';
+import '../../domain/usecases/save_to_favorites_usecase.dart';
 import '../../domain/usecases/search_users_usecase.dart';
 import '../../domain/usecases/toggle_pin_chat_usecase.dart';
 
@@ -56,4 +58,14 @@ final togglePinChatUseCaseProvider = Provider<TogglePinChatUseCase>((ref) {
 final pinMessageUseCaseProvider = Provider<PinMessageUseCase>((ref) {
   final repo = ref.watch(chatRepositoryProvider);
   return PinMessageUseCase(repo);
+});
+
+final getSavedChatUseCaseProvider = Provider<GetSavedChatUseCase>((ref) {
+  final repo = ref.watch(chatRepositoryProvider);
+  return GetSavedChatUseCase(repo);
+});
+
+final saveToFavoritesUseCaseProvider = Provider<SaveToFavoritesUseCase>((ref) {
+  final repo = ref.watch(chatRepositoryProvider);
+  return SaveToFavoritesUseCase(repo);
 });

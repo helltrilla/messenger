@@ -13,6 +13,14 @@ abstract class ChatRemoteDataSource {
   Future<void> markChatAsRead(String chatId, String messageId);
   Future<void> togglePinChat({required String chatId, required bool isPinned});
   Future<void> pinMessage({required String chatId, String? messageId});
+  Future<ChatModel> getOrCreateSavedChat();
+  Future<void> forwardToSavedMessages({
+    required String? content,
+    String type,
+    String? mediaUrl,
+    String? blurhash,
+    int? durationSec,
+  });
 }
 
 class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
@@ -211,5 +219,126 @@ class ChatRemoteDataSourceImpl implements ChatRemoteDataSource {
           .update({'pinned_message_id': messageId})
           .eq('id', chatId);
     }
+  }
+
+  @override
+  Future<ChatModel> getOrCreateSavedChat() async {
+    final uid = currentUserId;
+    if (uid == null) throw Exception('Not authenticated');
+
+    final key = 'saved_$uid';
+    String? chatId;
+
+    try {
+      chatId = await _client.rpc('get_or_create_saved_chat') as String?;
+    } catch (_) {}
+
+    if (chatId == null) {
+      final existing = await _client
+          .from('chats')
+          .select('id')
+          .eq('direct_key', key)
+          .maybeSingle();
+
+      if (existing != null) {
+        chatId = existing['id'] as String;
+      } else {
+        final inserted = await _client
+            .from('chats')
+            .insert({
+              'type': 'saved',
+              'title': 'Избранное',
+              'direct_key': key,
+              'created_by': uid,
+            })
+            .select('id')
+            .single();
+        chatId = inserted['id'] as String;
+      }
+
+      await _client.from('chat_members').upsert({
+        'chat_id': chatId,
+        'user_id': uid,
+        'role': 'owner',
+      });
+    }
+
+    final chatData = await _client
+        .from('chats')
+        .select('''
+          id,
+          type,
+          title,
+          avatar_url,
+          pinned_message_id,
+          last_message_text,
+          last_message_sender_id,
+          last_message_at
+        ''')
+        .eq('id', chatId)
+        .single();
+
+    return ChatModel(
+      id: chatId,
+      type: 'saved',
+      title: 'Избранное',
+      lastMessageText: chatData['last_message_text'],
+      lastMessageAt: chatData['last_message_at'] != null
+          ? DateTime.tryParse(chatData['last_message_at'])
+          : null,
+      unreadCount: 0,
+      partnerId: uid,
+    );
+  }
+
+  @override
+  Future<void> forwardToSavedMessages({
+    required String? content,
+    String type = 'text',
+    String? mediaUrl,
+    String? blurhash,
+    int? durationSec,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) throw Exception('Not authenticated');
+
+    final savedChat = await getOrCreateSavedChat();
+
+    final insertData = <String, dynamic>{
+      'chat_id': savedChat.id,
+      'sender_id': uid,
+      'content': content,
+      'type': type,
+      'media_url': mediaUrl,
+      'blurhash': blurhash,
+      'duration_sec': durationSec,
+      'is_read': true,
+    };
+
+    final newMsg = await _client
+        .from('messages')
+        .insert(insertData)
+        .select()
+        .single();
+
+    final previewText = type == 'image'
+        ? '📷 Фото'
+        : type == 'voice'
+        ? '🎤 Голосовое сообщение'
+        : type == 'file'
+        ? '📎 Файл'
+        : type == 'video'
+        ? '🎥 Видео'
+        : (content ?? '');
+
+    await _client
+        .from('chats')
+        .update({
+          'last_message_id': newMsg['id'],
+          'last_message_text': previewText,
+          'last_message_sender_id': uid,
+          'last_message_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', savedChat.id);
   }
 }

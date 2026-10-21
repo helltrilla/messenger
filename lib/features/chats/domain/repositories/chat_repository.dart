@@ -20,4 +20,12 @@ abstract class ChatRepository {
     required String chatId,
     String? messageId,
   });
+  Future<Result<Failure, ChatEntity>> getOrCreateSavedChat();
+  Future<Result<Failure, void>> forwardToSavedMessages({
+    required String? content,
+    String type,
+    String? mediaUrl,
+    String? blurhash,
+    int? durationSec,
+  });
 }
